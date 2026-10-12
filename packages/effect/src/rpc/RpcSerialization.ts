@@ -163,23 +163,23 @@ export const makeNdjson = (options?: StreamOptions): RpcSerialization["Service"]
       }
       return ({
         decode: (bytes) => {
-          buffer += typeof bytes === "string" ? bytes : (decoder ??= new TextDecoder()).decode(bytes, { stream: true })
+          const input = typeof bytes === "string"
+            ? bytes
+            : (decoder ??= new TextDecoder()).decode(bytes, { stream: true })
           let position = 0
-          let nlIndex = buffer.indexOf("\n", position)
           const items: Array<unknown> = []
-          while (nlIndex !== -1) {
-            if (isBufferSizeExceeded(nlIndex - position, maxBufferSize)) {
+          for (let nlIndex: number; (nlIndex = input.indexOf("\n", position)) !== -1; position = nlIndex + 1) {
+            buffer += input.slice(position, nlIndex)
+            if (isBufferSizeExceeded(buffer.length, maxBufferSize)) {
               failMaxBufferSize(maxBufferSize)
             }
-            const line = buffer.slice(position, nlIndex)
-            position = nlIndex + 1
             try {
-              items.push(JSON.parse(line))
+              items.push(JSON.parse(buffer))
             } catch {
             }
-            nlIndex = buffer.indexOf("\n", position)
+            buffer = ""
           }
-          buffer = buffer.slice(position)
+          buffer += input.slice(position)
           if (isBufferSizeExceeded(buffer.length, maxBufferSize)) {
             failMaxBufferSize(maxBufferSize)
           }

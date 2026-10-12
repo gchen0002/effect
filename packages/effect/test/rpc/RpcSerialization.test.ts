@@ -302,6 +302,28 @@ describe("RpcSerialization", () => {
     assert.deepStrictEqual(parser.decode("{\"id\":4}\n"), [{ id: 4 }])
   })
 
+  it.each(["string", "bytes"] as const)("ndjson preserves frames across fragmented %s input", (input) => {
+    const parser = RpcSerialization.ndjson.makeUnsafe()
+    const encoder = new TextEncoder()
+    const decode = (chunk: string) => parser.decode(input === "string" ? chunk : encoder.encode(chunk))
+
+    assert.deepStrictEqual(decode("{\"id\":"), [])
+    assert.deepStrictEqual(decode("1}\r"), [])
+    assert.deepStrictEqual(decode("\nnot json\n{\"id\":2}\n{\"id\":"), [{ id: 1 }, { id: 2 }])
+    assert.deepStrictEqual(decode(""), [])
+    assert.deepStrictEqual(decode("3}\n"), [{ id: 3 }])
+  })
+
+  it("ndjson applies maxBufferSize to each frame and recovers after overflow", () => {
+    const parser = RpcSerialization.makeNdjson({ maxBufferSize: 4 }).makeUnsafe()
+
+    assert.deepStrictEqual(parser.decode("12"), [])
+    assert.deepStrictEqual(parser.decode("34\n0\n1234\n"), [1234, 0, 1234])
+    assert.deepStrictEqual(parser.decode("12"), [])
+    assertMaxBufferSizeExceeded(() => parser.decode("345\n"), 4)
+    assert.deepStrictEqual(parser.decode("0\n"), [0])
+  })
+
   it.effect("layerNdjsonWith forwards maxBufferSize to its decoder", () =>
     Effect.gen(function*() {
       const serialization = yield* RpcSerialization.RpcSerialization
